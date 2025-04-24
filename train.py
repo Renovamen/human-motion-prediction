@@ -14,8 +14,6 @@ def build_trainer():
     torch.manual_seed(configs.seed)
 
     model = MotionPrediction(configs)
-    model.train()
-    model.to("cuda")
 
     support_dir = "./VPoserModelFiles/"
     expr_dir = osp.join(support_dir, "vposer_v2_05/")
@@ -24,10 +22,8 @@ def build_trainer():
         expr_dir,
         model_code=VPoser,
         remove_words_in_model_weights="vp_model.",
-        disable_grad=True,
-        comp_device="cuda"
+        disable_grad=True
     )
-    vposer.to("cuda")
 
     dataset = AMASSDataset(
         root_dir=configs.root_dir,

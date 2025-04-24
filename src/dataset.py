@@ -12,11 +12,15 @@ class AMASSDataset(Dataset):
         root_dir: str,
         vposer: nn.Module,
         amass_motion_input_length: int,
-        amass_motion_target_length: int
+        amass_motion_target_length: int,
+        device: torch.device = "cuda"
     ) -> None:
         super().__init__()
 
+        self.device = device
+
         self.vposer = vposer
+        self.vposer.to(self.device)
 
         self._root_dir = root_dir
         self._file_paths = self._get_file_paths()
@@ -69,7 +73,7 @@ class AMASSDataset(Dataset):
             amass_motion_poses = amass_motion_poses[sampled_index]
 
             # Run Vposer encoder on all frames
-            amass_motion_poses = amass_motion_poses.to("cuda")
+            amass_motion_poses = amass_motion_poses.to(self.device)
             amass_motion_poses = self.vposer.encode(amass_motion_poses).mean # (n, 32)
             amass_motion_poses = amass_motion_poses.cpu()
 

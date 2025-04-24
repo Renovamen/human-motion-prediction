@@ -5,6 +5,8 @@ exp_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime())
 
 @dataclass
 class Configs:
+    seed: int = 888
+
     # Dirs
     snapshot_dir: str = "/home/xfz5266/586/snapshot"
     log_file: str = f"/home/xfz5266/586/log/log_{exp_time}.log"
@@ -20,10 +22,10 @@ class Configs:
     # Training
     lr_max: float = 3e-4
     lr_min: float = 1e-5
+    lr_decay_after: int = 250
     total_epochs: int = 200
     weight_decay: float = 1e-4
     model_pth: str = None
-    seed: int = 888
 
     # Model
     motion_dim: int = 32

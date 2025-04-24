@@ -9,9 +9,14 @@ from tqdm import tqdm
 from src.configs import Configs
 from src.utils import get_logger, link_file, ensure_dir
 
-
-def update_lr_multistep(nb_iter: int, lr_max: float, lr_min: float, optimizer) :
-    if nb_iter > 100000:
+def update_lr_multistep(
+    optimizer: optim.Optimizer,
+    nb_iter: int,
+    lr_decay_after: int,
+    lr_max: float,
+    lr_min: float
+) -> float:
+    if nb_iter > lr_decay_after:
         current_lr = lr_min
     else:
         current_lr = lr_max
@@ -19,8 +24,7 @@ def update_lr_multistep(nb_iter: int, lr_max: float, lr_min: float, optimizer) :
     for param_group in optimizer.param_groups:
         param_group["lr"] = current_lr
 
-    return optimizer, current_lr
-
+    return current_lr
 
 class Trainer:
     def __init__(
@@ -28,15 +32,23 @@ class Trainer:
         configs: Configs,
         model: nn.Module,
         optimizer: optim.Optimizer,
-        dataloader: DataLoader
+        dataloader: DataLoader,
+        device: torch.device = "cuda"
     ) -> None:
         self.configs = configs
+        self.device = device
 
         self.model = model
         self.optimizer = optimizer
         self.dataloader = dataloader
 
         self._setup_logging()
+        self._clear_states()
+
+    def _clear_states(self):
+        self.nb_iter = 0
+        self.avg_loss = 0.
+        self.avg_lr = 0.
 
     def _setup_logging(self):
         configs = self.configs
@@ -53,18 +65,13 @@ class Trainer:
 
         self.logger.info("Loading model path from {} ".format(model_pth))
 
-    def train_step(
-        self,
-        amass_motion_input,
-        amass_motion_target,
-        nb_iter: int
-    ) :
-        motion_pred = self.model(amass_motion_input)
+    def train_step(self, motion_input, motion_target):
+        motion_pred = self.model(motion_input)
 
         motion_pred = motion_pred.reshape(-1, 1)
-        amass_motion_target = amass_motion_target.reshape(-1, 1)
+        motion_target = motion_target.reshape(-1, 1)
 
-        loss = torch.mean(torch.norm(motion_pred - amass_motion_target, 2, 1))
+        loss = torch.mean(torch.norm(motion_pred - motion_target, 2, 1))
         loss = loss.mean()
 
         self.optimizer.zero_grad()
@@ -72,51 +79,47 @@ class Trainer:
         loss.backward()
         self.optimizer.step()
 
-        self.optimizer, current_lr = update_lr_multistep(
-            nb_iter,
+        current_lr = update_lr_multistep(
+            self.optimizer,
+            self.nb_iter,
+            self.configs.lr_decay_after,
             self.configs.lr_max,
-            self.configs.lr_min,
-            self.optimizer
+            self.configs.lr_min
         )
 
         return loss.item(), current_lr
 
     def train(self):
         self.model.train()
+        self.model.to(self.device)
+
+        self._clear_states()
 
         configs = self.configs
 
-        nb_iter = 0
-        avg_loss = 0.
-        avg_lr = 0.
-
         for epoch in range(configs.total_epochs):
-            for (amass_motion_input, amass_motion_target) in tqdm(self.dataloader, desc=f"Epoch {epoch + 1}/{configs.total_epochs}", leave=False):
-                amass_motion_input = amass_motion_input.to("cuda")
-                amass_motion_target = amass_motion_target.to("cuda")
+            for (motion_input, motion_target) in tqdm(self.dataloader, desc=f"Epoch {epoch + 1}/{configs.total_epochs}", leave=False):
+                motion_input = motion_input.to(self.device)
+                motion_target = motion_target.to(self.device)
 
-                loss, current_lr = self.train_step(
-                    amass_motion_input,
-                    amass_motion_target,
-                    nb_iter
-                )
+                loss, current_lr = self.train_step(motion_input, motion_target)
 
-                avg_loss += loss
-                avg_lr += current_lr
+                self.avg_loss += loss
+                self.avg_lr += current_lr
 
-                if (nb_iter + 1) % configs.print_every ==  0 :
-                    avg_loss = avg_loss / configs.print_every
-                    avg_lr = avg_lr / configs.print_every
+                if (self.nb_iter + 1) % configs.print_every ==  0 :
+                    self.avg_loss /= configs.print_every
+                    self.avg_lr /= configs.print_every
 
-                    self.logger.info("Iter {} Summary: ".format(nb_iter + 1))
-                    self.logger.info(f"\t lr: {avg_lr} \t Training loss: {avg_loss}")
+                    self.logger.info("Iter {} Summary: ".format(self.nb_iter + 1))
+                    self.logger.info(f"\t lr: {self.avg_lr} \t Training loss: {self.avg_loss}")
 
-                    avg_loss = 0
-                    avg_lr = 0
+                    self.avg_loss = 0
+                    self.avg_lr = 0
 
-                if (nb_iter + 1) % configs.save_every ==  0 :
-                    torch.save(self.model.state_dict(), configs.snapshot_dir + "/model-iter-" + str(nb_iter + 1) + ".pth")
+                if (self.nb_iter + 1) % configs.save_every ==  0 :
+                    torch.save(self.model.state_dict(), f"{configs.snapshot_dir}/model-iter-{self.nb_iter + 1}.pth")
 
-                nb_iter += 1
+                self.nb_iter += 1
 
-        return avg_loss, avg_lr
+        return self.avg_loss, self.avg_lr

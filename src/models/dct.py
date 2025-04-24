@@ -15,7 +15,7 @@ def get_dct_matrix(N):
 
     idct_m = np.linalg.inv(dct_m)
 
-    dct_m = torch.tensor(dct_m).float().unsqueeze(0).to("cuda")
-    idct_m = torch.tensor(idct_m).float().unsqueeze(0).to("cuda")
+    dct_m = torch.tensor(dct_m).float().unsqueeze(0)
+    idct_m = torch.tensor(idct_m).float().unsqueeze(0)
 
     return dct_m, idct_m

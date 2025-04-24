@@ -5,15 +5,17 @@ from .mlp import MLP
 from .dct import get_dct_matrix
 
 class MotionPrediction(nn.Module):
-    def __init__(self, configs):
+    def __init__(self, configs, device: torch.device = "cuda"):
         super().__init__()
 
         self.configs = configs
+        self.device = device
 
         self.arr0 = Rearrange("b n d -> b d n")
         self.arr1 = Rearrange("b d n -> b n d")
 
         self.dct_m, self.idct_m = get_dct_matrix(configs.amass_input_length)
+        self.dct_m, self.idct_m = self.dct_m.to(device), self.idct_m.to(device)
 
         self.mlp = MLP(
             dim=configs.mlp_dim,
