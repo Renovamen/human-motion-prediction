@@ -1,6 +1,7 @@
 import glob
 import numpy as np
 from tqdm import tqdm
+from typing import Literal, List
 
 import torch
 from torch.utils.data import Dataset
@@ -13,11 +14,13 @@ class AMASSDataset(Dataset):
         vposer: nn.Module,
         amass_motion_input_length: int,
         amass_motion_target_length: int,
+        split: Literal["train", "test", "all"] = "all",
         device: torch.device = "cuda"
     ) -> None:
         super().__init__()
 
         self.device = device
+        self.split = split
 
         self.vposer = vposer
         self.vposer.to(self.device)
@@ -33,8 +36,11 @@ class AMASSDataset(Dataset):
     def __len__(self):
         return len(self._all_amass_motion_poses)
 
-    def _get_file_paths(self):
-        return glob.glob(f"{self._root_dir}/*poses.npz")
+    def _get_file_paths(self, ratio: float = 0.8):
+        paths = glob.glob(f"{self._root_dir}/*poses.npz")
+
+        idx = int(len(paths) * ratio)
+        return paths[:idx] if self.split == "train" else paths[idx:] if self.split == "test" else paths
 
     def _preprocess(self, amass_motion_feats):
         N = amass_motion_feats.size(0)

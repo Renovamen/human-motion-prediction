@@ -30,6 +30,7 @@ def build_trainer():
         vposer=vposer,
         amass_motion_input_length=configs.amass_input_length,
         amass_motion_target_length=configs.amass_target_length,
+        split="train"
     )
     dataloader = DataLoader(
         dataset,
