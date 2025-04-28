@@ -1,7 +1,10 @@
+import torch
+import random
+import numpy as np
 import logging
 import os
 
-def get_logger(file_path, name="train"):
+def get_logger(file_path: str, name: str = "train"):
     log_dir = "/".join(file_path.split("/")[:-1])
     ensure_dir(log_dir)
 
@@ -24,3 +27,9 @@ def link_file(src, target):
 def ensure_dir(path):
     if not os.path.isdir(path):
         os.makedirs(path)
+
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU

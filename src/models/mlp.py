@@ -1,9 +1,11 @@
 import torch
 from torch import nn
 from einops.layers.torch import Rearrange
+from typing import Literal
+from .dct import get_dct_matrix
 
-class LayNormSpatial(nn.Module):
-    def __init__(self, dim, epsilon=1e-5):
+class LayerNormSpatial(nn.Module):
+    def __init__(self, dim: int, epsilon: float = 1e-5):
         super().__init__()
         self.epsilon = epsilon
 
@@ -18,8 +20,8 @@ class LayNormSpatial(nn.Module):
         y = y * self.alpha + self.beta
         return y
 
-class LayNormTemporal(nn.Module):
-    def __init__(self, dim, epsilon=1e-5):
+class LayerNormTemporal(nn.Module):
+    def __init__(self, dim: int, epsilon: float = 1e-5):
         super().__init__()
         self.epsilon = epsilon
 
@@ -35,12 +37,12 @@ class LayNormTemporal(nn.Module):
         return y
 
 class FCSpatial(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim: int):
         super().__init__()
 
         self.fc = nn.Linear(dim, dim)
-        self.arr0 = Rearrange("b n d -> b d n")
-        self.arr1 = Rearrange("b d n -> b n d")
+        self.arr0 = Rearrange("b d n -> b n d")
+        self.arr1 = Rearrange("b n d -> b d n")
 
     def forward(self, x):
         x = self.arr0(x)
@@ -49,7 +51,7 @@ class FCSpatial(nn.Module):
         return x
 
 class FCTemoral(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim: int):
         super().__init__()
         self.fc = nn.Linear(dim, dim)
 
@@ -62,28 +64,23 @@ class MLPBlock(nn.Module):
         self,
         dim: int,
         seq: int,
-        use_norm: bool = True,
-        use_spatial_fc: bool = False,
-        layer_norm_axis: str = "spatial"
+        layer_norm: Literal["spatial", "temporal", "all", False] = "spatial",
+        use_spatial_fc: bool = False
     ) -> None:
         super().__init__()
 
-        if not use_spatial_fc:
-            self.fc = FCTemoral(seq)
-        else:
-            self.fc = FCSpatial(dim)
+        self.fc = FCSpatial(dim) if use_spatial_fc else FCTemoral(seq)
 
-        if use_norm:
-            if layer_norm_axis == "spatial":
-                self.norm = LayNormSpatial(dim)
-            elif layer_norm_axis == "temporal":
-                self.norm = LayNormTemporal(seq)
-            elif layer_norm_axis == "all":
-                self.norm = nn.LayerNorm([dim, seq])
-            else:
-                raise NotImplementedError
-        else:
+        if layer_norm == False:
             self.norm = nn.Identity()
+        elif layer_norm == "spatial":
+            self.norm = LayerNormSpatial(dim)
+        elif layer_norm == "temporal":
+            self.norm = LayerNormTemporal(seq)
+        elif layer_norm == "all":
+            self.norm = nn.LayerNorm([dim, seq])
+        else:
+            raise NotImplementedError
 
         self.reset_parameters()
 
@@ -98,13 +95,62 @@ class MLPBlock(nn.Module):
         return x
 
 class MLP(nn.Module):
-    def __init__(self, dim, seq, use_norm, use_spatial_fc, num_layers, layer_norm_axis):
+    def __init__(self, dim, seq, layer_norm, use_spatial_fc, num_layers):
         super().__init__()
         self.mlps = nn.Sequential(*[
-            MLPBlock(dim, seq, use_norm, use_spatial_fc, layer_norm_axis)
+            MLPBlock(dim, seq, layer_norm, use_spatial_fc)
             for _ in range(num_layers)
         ])
 
     def forward(self, x):
         x = self.mlps(x)
         return x
+
+class MotionMLP(nn.Module):
+    def __init__(self, configs):
+        super().__init__()
+
+        self.configs = configs
+
+        self.arr0 = Rearrange("b n d -> b d n")
+        self.arr1 = Rearrange("b d n -> b n d")
+
+        self.dct_m, self.idct_m = get_dct_matrix(configs.input_length)
+
+        self.mlp = MLP(
+            dim=configs.mlp_dim,
+            seq=configs.input_length,
+            layer_norm=configs.mlp_layer_norm,
+            use_spatial_fc=configs.mlp_spatial_fc,
+            num_layers=configs.mlp_num_layers
+        )
+
+        self.fc_in = nn.Linear(configs.motion_dim, configs.mlp_dim)
+        self.fc_out = nn.Linear(configs.mlp_dim, configs.motion_dim)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.xavier_uniform_(self.fc_out.weight, gain=1e-8)
+        nn.init.constant_(self.fc_out.bias, 0)
+
+    def forward(self, x):
+        self.dct_m, self.idct_m = self.dct_m.to(x.device), self.idct_m.to(x.device)
+
+        x_ = x.clone()
+        x_ = torch.matmul(self.dct_m, x_)
+
+        motion_feats = self.fc_in(x_)
+        motion_feats = self.arr0(motion_feats)
+
+        motion_feats = self.mlp(motion_feats)
+
+        motion_feats = self.arr1(motion_feats)
+        motion_feats = self.fc_out(motion_feats)
+
+        motion_feats = torch.matmul(self.idct_m, motion_feats)
+
+        offset = x[:, -1:]
+        motion_feats = motion_feats[:, -self.configs.target_length_train:] + offset
+
+        return motion_feats

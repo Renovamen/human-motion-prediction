@@ -3,6 +3,7 @@ snapshot/
 VPoserModelFiles/
 AMASS_CMUsubset/
 *.zip
+*.pth
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

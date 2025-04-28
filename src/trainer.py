@@ -42,8 +42,11 @@ class Trainer:
         self.optimizer = optimizer
         self.dataloader = dataloader
 
-        self._setup_logging()
         self._clear_states()
+        self._setup_logging()
+
+        if configs.train_model_pth is not None:
+            self.load_model(configs.train_model_pth)
 
     def _clear_states(self):
         self.nb_iter = 0
@@ -98,7 +101,7 @@ class Trainer:
         configs = self.configs
 
         for epoch in range(configs.total_epochs):
-            for (motion_input, motion_target) in tqdm(self.dataloader, desc=f"Epoch {epoch + 1}/{configs.total_epochs}", leave=False):
+            for (_, _, motion_input, motion_target) in tqdm(self.dataloader, desc=f"Epoch {epoch + 1}/{configs.total_epochs}", leave=False):
                 motion_input = motion_input.to(self.device)
                 motion_target = motion_target.to(self.device)
 
