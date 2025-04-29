@@ -22,7 +22,7 @@ def build_evaluator(configs: Configs) -> Evaluator:
     dataloader = DataLoader(
         dataset,
         batch_size=1,
-        num_workers=configs.num_workers,
+        num_workers=1,
         drop_last=False,
         shuffle=False,
         pin_memory=True

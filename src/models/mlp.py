@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from einops.layers.torch import Rearrange
+from einops import rearrange
 from typing import Literal
 from .dct import get_dct_matrix
 
@@ -39,15 +39,12 @@ class LayerNormTemporal(nn.Module):
 class FCSpatial(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
-
         self.fc = nn.Linear(dim, dim)
-        self.arr0 = Rearrange("b d n -> b n d")
-        self.arr1 = Rearrange("b n d -> b d n")
 
     def forward(self, x):
-        x = self.arr0(x)
+        x = rearrange(x, "b d n -> b n d")
         x = self.fc(x)
-        x = self.arr1(x)
+        x = rearrange(x, "b n d -> b d n")
         return x
 
 class FCTemoral(nn.Module):
@@ -112,9 +109,6 @@ class MotionMLP(nn.Module):
 
         self.configs = configs
 
-        self.arr0 = Rearrange("b n d -> b d n")
-        self.arr1 = Rearrange("b d n -> b n d")
-
         self.dct_m, self.idct_m = get_dct_matrix(configs.input_length)
 
         self.mlp = MLP(
@@ -141,11 +135,11 @@ class MotionMLP(nn.Module):
         x_ = torch.matmul(self.dct_m, x_)
 
         motion_feats = self.fc_in(x_)
-        motion_feats = self.arr0(motion_feats)
+        motion_feats = rearrange(motion_feats, "b n d -> b d n")
 
         motion_feats = self.mlp(motion_feats)
 
-        motion_feats = self.arr1(motion_feats)
+        motion_feats = rearrange(motion_feats, "b d n -> b n d")
         motion_feats = self.fc_out(motion_feats)
 
         motion_feats = torch.matmul(self.idct_m, motion_feats)
